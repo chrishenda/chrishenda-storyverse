@@ -7,6 +7,7 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/data
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./data:/data
     restart: unless-stopped

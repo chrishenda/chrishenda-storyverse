@@ -224,15 +224,32 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 export const generateAvatar = async (character: Character): Promise<string> => {
     console.log("Generating avatar for:", character.name);
-    
     if (character.photos.length === 0) {
         throw new Error("Cannot generate avatar without reference photos.");
     }
-    
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
     try {
-        const ai = getAi();
         const base64Image = await fileToBase64(character.photos[0]);
-
+        if (apiBase) {
+            const res = await fetch(`${apiBase}/ai/generate-avatar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: character.name,
+                    role: character.role,
+                    age: character.age,
+                    details: character.details,
+                    costumeColor: character.costumeColor,
+                    photo: { data: base64Image, mimeType: character.photos[0].type }
+                })
+            });
+            if (!res.ok) throw new Error(`Server avatar generation failed: ${res.status} ${res.statusText}`);
+            const json = await res.json();
+            if (json.avatarDataUrl) return json.avatarDataUrl as string;
+            throw new Error('Server did not return avatarDataUrl.');
+        }
+        // Fallback to client-side if server is not configured
+        const ai = getAi();
         const prompt = `Create a 3D avatar in the style of a Pixar movie for the following character.
         Character Name: ${character.name}
         Role: ${character.role}
@@ -241,31 +258,16 @@ export const generateAvatar = async (character: Character): Promise<string> => {
         Costume Color Cue: ${character.costumeColor}
         The avatar should be a friendly, expressive character suitable for a children's story, shown from the chest up, facing forward.
         Use the provided image as a strong reference for the character's facial features and appearance.`;
-
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-                parts: [
-                    {
-                        inlineData: {
-                            data: base64Image,
-                            mimeType: character.photos[0].type,
-                        },
-                    },
-                    { text: prompt },
-                ],
-            },
-            config: {
-                // Fix: `responseModalities` must be an array with a single `Modality.IMAGE` element.
-                responseModalities: [Modality.IMAGE],
-            },
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ inlineData: { data: base64Image, mimeType: character.photos[0].type } }, { text: prompt }] },
+            config: { responseMimeType: 'application/json' }
         });
-        
         const base64ImageBytes = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (base64ImageBytes) {
-            return `data:image/png;base64,${base64ImageBytes}`;
-        }
-        throw new Error("API did not return an image.");
+        if (base64ImageBytes) return `data:image/png;base64,${base64ImageBytes}`;
+        const parsed = JSON.parse(response.text || '{}');
+        if (parsed.imageBase64) return `data:image/png;base64,${parsed.imageBase64}`;
+        throw new Error('API did not return an image.');
     } catch (e) {
         console.error("Gemini avatar generation failed.", e);
         throw new Error('The AI could not process the reference photo. Please try a different one.');

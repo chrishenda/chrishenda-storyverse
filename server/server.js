@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
+import { GoogleGenAI, Type, Modality } from '@google/genai';
 
 const app = express();
 app.use(cors());
@@ -47,7 +48,7 @@ const runFFmpeg = (args) => new Promise((resolve, reject) => {
 
 app.get('/health', async (req, res) => {
   try {
-    res.json({ status: 'ok', uploads: UPLOADS_DIR, outputs: OUTPUTS_DIR });
+    res.json({ status: 'ok', uploads: UPLOADS_DIR, outputs: OUTPUTS_DIR, geminiKeyPresent: !!GEMINI_API_KEY });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -88,7 +89,65 @@ app.post('/merge', upload.array('scenes', 50), async (req, res) => {
   }
 });
 
+// --- AI endpoints (server-side Gemini calls) -------------------------------
+
+// Generate avatar from a reference photo and character details
+app.post('/ai/generate-avatar', express.json({ limit: '25mb' }), async (req, res) => {
+  try {
+    if (!GEMINI_API_KEY) return res.status(400).json({ error: 'Server GEMINI_API_KEY is not configured.' });
+    const { name, role, age, details, costumeColor, photo } = req.body || {};
+    if (!photo?.data || !photo?.mimeType) {
+      return res.status(400).json({ error: 'photo.data and photo.mimeType are required.' });
+    }
+    const ai = getAi();
+    const prompt = `Create a 3D avatar in the style of a Pixar movie for the following character.
+Character Name: ${name}
+Role: ${role}
+Age: ${age}
+Details: ${details}
+Costume Color Cue: ${costumeColor}
+The avatar should be a friendly, expressive character suitable for a children's story, shown from the chest up, facing forward.
+Use the provided image as a strong reference for the character's facial features and appearance.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: {
+        parts: [
+          { inlineData: { data: photo.data, mimeType: photo.mimeType } },
+          { text: prompt },
+        ]
+      },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { imageBase64: { type: Type.STRING } },
+          required: ['imageBase64']
+        }
+      }
+    });
+
+    // Some versions return image bytes in candidates; fall back to schema parsing if provided
+    const inlineBytes = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (inlineBytes) {
+      return res.json({ avatarDataUrl: `data:image/png;base64,${inlineBytes}` });
+    }
+    const parsed = JSON.parse(response.text || '{}');
+    if (parsed.imageBase64) {
+      return res.json({ avatarDataUrl: `data:image/png;base64,${parsed.imageBase64}` });
+    }
+    return res.status(500).json({ error: 'AI did not return image data.' });
+  } catch (e) {
+    console.error('generate-avatar failed', e);
+    res.status(500).json({ error: e.message || 'Avatar generation failed.' });
+  }
+});
+
+
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
   console.log(`FFmpeg API listening on :${port}`);
 });
+// Gemini setup (server-side key, not exposed to client)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+const getAi = () => new GoogleGenAI({ apiKey: GEMINI_API_KEY });
