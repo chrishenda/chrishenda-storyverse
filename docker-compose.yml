@@ -8,6 +8,7 @@ services:
       - PORT=8080
       - DATA_DIR=/data
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - NODE_ENV=production
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -17,8 +18,8 @@ services:
       context: .
       dockerfile: Dockerfile.web
       args:
-        VITE_FFMPEG_API_BASE: http://ffmpeg-api:8080
-        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY}
+        # Use relative base; Nginx will proxy /ai and /videos to ffmpeg-api
+        VITE_FFMPEG_API_BASE: /
     container_name: storyverse-web
     ports:
       - "3000:80"

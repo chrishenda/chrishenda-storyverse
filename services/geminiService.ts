@@ -149,63 +149,27 @@ const generateVideoBlob = async (
     prompt: string,
     config: { resolution: '720p' | '1080p'; aspectRatio: '16:9' | '9:16' }
 ): Promise<string> => {
-    try {
-        const ai = getAi();
-        // First, generate a descriptive prompt for an image model
-        const descriptionResponse = await safeGenerateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Based on the following prompt, create a detailed, visually rich description for a single, static image. The image should be cinematic and suitable for a Pixar-style animated film. Do not describe actions, only the scene itself. Prompt: "${prompt}"`,
-        });
-        const imagePrompt = descriptionResponse.text;
-
-        // Second, generate the image
-        const imageResponse = await safeGenerateImages({
-            model: 'gemini-2.5-flash-image',
-            prompt: imagePrompt,
-            config: {
-                numberOfImages: 1,
-                aspectRatio: config.aspectRatio,
-            },
-        });
-
-        const img0 = imageResponse.generatedImages?.[0];
-        const imageUrl = (img0 as any)?.image?.url || (img0 as any)?.uri;
-        const apiKey = getApiKey();
-        const sep = imageUrl.includes('?') ? '&' : '?';
-        const imageReqUrl = apiKey ? `${imageUrl}${sep}key=${apiKey}` : imageUrl;
-        const imageResp = await fetch(imageReqUrl);
-        if (!imageResp.ok) {
-            throw new Error(`Image fetch failed: ${imageResp.status} ${imageResp.statusText}`);
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+    if (apiBase) {
+        try {
+            const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/generate-scene-video`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, resolution: config.resolution, aspectRatio: config.aspectRatio, durationSeconds: 4 })
+            });
+            if (!res.ok) throw new Error(`Server scene video failed: ${res.status} ${res.statusText}`);
+            const json = await res.json();
+            const url = json.videoUrl as string;
+            if (/^https?:\/\//.test(apiBase)) {
+                if (url.startsWith('/')) return `${apiBase.replace(/\/$/, '')}${url}`;
+                return `${apiBase.replace(/\/$/, '')}/${url}`;
+            }
+            return url;
+        } catch (e) {
+            console.warn('Server scene video failed, switching to fallback content.', e);
         }
-        const imageBlob = await imageResp.blob();
-
-        // Third, create a simple video from the image (e.g., using a canvas)
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        const img = await createImageBitmap(imageBlob);
-        canvas.width = config.resolution === '1080p' ? 1920 : 1280;
-        canvas.height = config.resolution === '1080p' ? 1080 : 720;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        const stream = canvas.captureStream(1); // 1 fps
-        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-        const chunks: Blob[] = [];
-        recorder.ondataavailable = (e) => chunks.push(e.data);
-        
-        return new Promise((resolve, reject) => {
-            recorder.onstop = () => {
-                const blob = new Blob(chunks, { type: 'video/webm' });
-                resolve(URL.createObjectURL(blob));
-            };
-            recorder.onerror = reject;
-            recorder.start();
-            setTimeout(() => recorder.stop(), 4000); // Create a 4-second clip
-        });
-
-    } catch (error) {
-        console.warn('Video generation failed, switching to fallback content.', error);
-        return await fetchFallbackVideo(config.aspectRatio);
     }
+    return await fetchFallbackVideo(config.aspectRatio);
 }
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -279,100 +243,44 @@ export const generateWorldPreview = async (
     onProgress: (progress: number) => void
 ): Promise<string> => {
     console.log("Generating world preview for:", world.style);
-    
-    // Fix: `setInterval` in a browser environment returns a `number`, not a `NodeJS.Timeout`. This resolves the "Cannot find namespace 'NodeJS'" error.
-    let progressInterval: number | undefined;
-    try {
-        const ai = getAi();
-        let currentProgress = 0;
-        onProgress(currentProgress);
-        // Simulate some initial progress while the request is being made
-        progressInterval = setInterval(() => {
-            currentProgress = Math.min(currentProgress + 5, 95);
-            onProgress(currentProgress);
-        }, 1000) as unknown as number;
-
-        const prompt = `Create a short, looping 5-second video of a parallaxing background for an animated film.
-        Style: ${world.style} (Stylization strength: ${world.stylizationStrength}%)
-        Setting: ${world.backgroundSet}
-        Time and Season: ${world.timeOfDay}
-        Lighting and Mood: ${world.lightingMood}
-        The video should be scenic, beautiful, and establish a clear mood without any characters present.`;
-
-        let operation = await safeGenerateVideos({
-            model: 'veo-3.0-generate',
-            prompt: prompt,
-            config: {
-                numberOfVideos: 1,
-                resolution: '720p',
-                aspectRatio: '16:9'
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+    onProgress(10);
+    if (apiBase) {
+        try {
+            const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/generate-world-preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ world, resolution: '720p', aspectRatio: '16:9' }),
+            });
+            if (!res.ok) throw new Error(`Server world preview failed: ${res.statusText}`);
+            const json = await res.json();
+            onProgress(100);
+            const url = json.videoUrl as string;
+            if (/^https?:\/\//.test(apiBase)) {
+                if (url.startsWith('/')) return `${apiBase.replace(/\/$/, '')}${url}`;
+                return `${apiBase.replace(/\/$/, '')}/${url}`;
             }
-        });
-
-        while (!operation.done) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            operation = await ai.operations.getVideosOperation({ operation: operation });
+            return url;
+        } catch (e) {
+            console.error('Server world preview failed, falling back.', e);
         }
-        
-        const objectURL = await videoAssetToObjectUrl(operation.response?.generatedVideos?.[0]?.video);
-        onProgress(100);
-        return objectURL;
-
-    } catch(e) {
-        console.error("Error in world generation:", e);
-        if (e instanceof Error && e.message.includes("Requested entity was not found")) {
-            throw new Error("API Key validation failed. Please re-select your key and ensure billing is enabled.");
-        }
-        // Graceful fallback: return a stock preview clip to keep UX smooth
-        return await fetchFallbackVideo('16:9');
-    } finally {
-        if (progressInterval) clearInterval(progressInterval);
     }
+    return await fetchFallbackVideo('16:9');
 };
 
 export const generateStoryFromPrompt = async (prompt: string, characters: Character[]): Promise<Partial<Story>> => {
     console.log("Generating story idea from prompt:", prompt);
-    const ai = getAi();
-    const characterDescriptions = characters.map(c => `- ${c.name} (${c.role})`).join('\n');
-
-    const fullPrompt = `You are a creative writer for children's stories. Based on the following simple prompt and character list, generate a complete story concept.
-    
-    Prompt: "${prompt}"
-
-    Characters available:
-    ${characterDescriptions}
-
-    Your response must be a JSON object with the following fields: "title" (string), "synopsis" (a 2-3 sentence summary), "ageGroup" (e.g., "4-7 years"), "location" (string), and "scenes" (an array of 3-5 descriptive strings for key story beats).
-    `;
-
-    try {
-        const response = await safeGenerateContent({
-            model: 'gemini-2.5-flash',
-            contents: fullPrompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        synopsis: { type: Type.STRING },
-                        ageGroup: { type: Type.STRING },
-                        location: { type: Type.STRING },
-                        scenes: {
-                            type: Type.ARRAY,
-                            items: { type: Type.STRING }
-                        }
-                    },
-                    required: ['title', 'synopsis', 'ageGroup', 'location', 'scenes']
-                }
-            }
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+    if (apiBase) {
+        const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/story/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, characters }),
         });
-        const parsed = JSON.parse(response.text);
-        return parsed;
-    } catch(e) {
-        console.error("Failed to generate story from prompt.", e);
-        throw new Error("AI story generation failed. Your prompt might be too restrictive or unclear. Try being more general.");
+        if (!res.ok) throw new Error(`Server story generation failed: ${res.status} ${res.statusText}`);
+        return await res.json();
     }
+    throw new Error('Server AI is not configured. Please set VITE_FFMPEG_API_BASE.');
 }
 
 
@@ -381,65 +289,16 @@ export const expandStoryOutline = async (
     characters: Character[]
 ): Promise<Story> => {
     console.log("Expanding story:", story.template);
-    
-    const ai = getAi();
-    const characterDescriptions = characters.map(c => 
-        `- ${c.name} (${c.role}, age ${c.age}): ${c.details}`
-    ).join('\n');
-    
-    const storyConceptPrompt = (story.template === StoryTemplate.Custom || story.template === StoryTemplate.AIQuick)
-        ? `
-        Title: ${story.title}
-        Synopsis: ${story.synopsis}
-        Target Age Group: ${story.ageGroup}
-        Location: ${story.location}
-        Time Period: ${story.timePeriod}
-        Key Scenes:
-        ${story.scenes.map((scene, index) => `${index + 1}. ${scene}`).join('\n')}
-        `
-        : `
-        Template: ${story.template}
-        `;
-    
-    const prompt = `You are a creative storyteller for children's animated films. 
-    Expand the following story concept into a short, 3-act script suitable for a ${story.targetDuration}-minute animation.
-    The script should include character dialogue, actions, and scene descriptions.
-
-    Characters:
-    ${characterDescriptions}
-
-    Story Concept:
-    ${storyConceptPrompt}
-    `;
-    
-    try {
-        const response = await safeGenerateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        expandedScript: { 
-                            type: Type.STRING,
-                            description: "The full script including dialogue and scene descriptions."
-                        }
-                    },
-                    required: ['expandedScript']
-                }
-            }
-        });
-        
-        const jsonText = response.text;
-        const parsed = JSON.parse(jsonText);
-
-        return { ...story, expandedScript: parsed.expandedScript };
-
-    } catch (e) {
-        console.error("Failed to generate or parse story.", e);
-        throw new Error("AI script generation failed. Please try again or adjust the story details.");
-    }
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+    if (!apiBase) throw new Error('Server AI is not configured.');
+    const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/story/expand`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ story, characters }),
+    });
+    if (!res.ok) throw new Error(`Server story expand failed: ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    return { ...story, expandedScript: json.expandedScript };
 };
 
 // Helper function to generate a VTT caption file from a script
@@ -475,41 +334,17 @@ const generateVTT = (script: string): string => {
 
 export const resyncCaptions = async (script: string): Promise<string> => {
     console.log("Resyncing captions with AI...");
-    const ai = getAi();
-
-    const prompt = `You are a video production assistant specializing in subtitles.
-    Your task is to analyze the following script for a short animated film and generate a perfectly timed WebVTT subtitle file.
-    The total duration of the film is approximately 3 minutes.
-    Pace the subtitles naturally, allowing for pauses in dialogue and giving enough time for scene descriptions to be read.
-    Each cue should correspond to a line or a small group of related lines from the script.
-    
-    The output must ONLY be the raw VTT content, starting with "WEBVTT". Do not include any explanations, markdown, or anything else.
-
-    Script:
-    ---
-    ${script}
-    ---
-    `;
-
-    try {
-        const response = await safeGenerateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        const vttContent = response.text.trim();
-        
-        if (!vttContent.startsWith('WEBVTT')) {
-            throw new Error("Generated content is not a valid VTT file.");
-        }
-
-        const blob = new Blob([vttContent], { type: 'text/vtt' });
-        return URL.createObjectURL(blob);
-
-    } catch (e) {
-        console.error("Failed to resync captions with AI.", e);
-        throw new Error("The AI failed to generate new timings. Please try again.");
-    }
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+    if (!apiBase) throw new Error('Server AI is not configured.');
+    const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/resync-captions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script }),
+    });
+    if (!res.ok) throw new Error(`Server resync captions failed: ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    const blob = new Blob([json.vtt], { type: 'text/vtt' });
+    return URL.createObjectURL(blob);
 };
 
 // Robust loader with CDN fallbacks for ffmpeg.wasm core
@@ -600,7 +435,7 @@ export const startFinalRender = async (
 ) => {
     console.log("Starting final render process...");
     const { story, characters, world } = job;
-    const ai = getAi();
+    const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
 
     try {
         // Step 1: Batch generate all scene descriptions
@@ -609,15 +444,19 @@ export const startFinalRender = async (
             `Scene ${index + 1}: ${scene}. Style: ${world.style}, ${world.lightingMood}. Characters: ${characters.map(c => c.name).join(', ') || 'None'}.`
         );
 
-        const batchDescriptionResponse = await safeGenerateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Based on the following scene prompts, create a detailed, visually rich description for a single, static image for EACH scene. The images should be cinematic and suitable for a Pixar-style animated film. Do not describe actions, only the scene itself. Return a JSON array of strings, where each string is a description for one scene.\n\nPrompts:\n${JSON.stringify(scenePrompts)}`,
-            config: {
-                responseMimeType: 'application/json',
-            },
-        });
-        
-        const sceneImagePrompts = JSON.parse(batchDescriptionResponse.text);
+        let sceneImagePrompts: string[] = [];
+        if (apiBase) {
+            const res = await fetch(`${apiBase.replace(/\/$/, '')}/ai/describe-image-batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompts: scenePrompts }),
+            });
+            if (!res.ok) throw new Error(`Server image description failed: ${res.status} ${res.statusText}`);
+            const json = await res.json();
+            sceneImagePrompts = json.descriptions as string[];
+        } else {
+            throw new Error('Server AI is not configured.');
+        }
 
         if (sceneImagePrompts.length !== story.scenes.length) {
             throw new Error('AI did not return the correct number of scene descriptions.');
@@ -634,15 +473,9 @@ export const startFinalRender = async (
         }
         onProgress({ progress: 70, message: 'All scenes generated. Merging into final film...' });
 
-        // Step 3: Merge videos (prefer server if configured)
-        let finalFilmUrl: string;
-        const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
-        if (apiBase) {
-            onProgress({ progress: 80, message: 'Uploading scenes to server for merge...' });
-            finalFilmUrl = await mergeVideosServer(sceneVideos);
-        } else {
-            finalFilmUrl = await mergeVideos(sceneVideos);
-        }
+        // Step 3: Merge videos via server
+        onProgress({ progress: 80, message: 'Uploading scenes to server for merge...' });
+        const finalFilmUrl = await mergeVideosServer(sceneVideos);
         onProgress({ progress: 85, message: 'Film merged. Generating trailer and other assets...' });
 
         // Step 4: Generate other assets (trailer, shorts, etc.) - simplified for brevity
@@ -650,7 +483,7 @@ export const startFinalRender = async (
         const shortUrl = await generateVideoBlob(`A vertical short clip from "${story.title}"`, { resolution: '1080p', aspectRatio: '9:16' });
         const posterUrl = 'https://via.placeholder.com/600x900.png?text=' + encodeURIComponent(story.title);
         const scriptUrl = URL.createObjectURL(new Blob([story.expandedScript], { type: 'text/plain' }));
-        const captionsUrl = URL.createObjectURL(new Blob(['WEBVTT\n\n00:00:01.000 --> 00:00:05.000\nHello, world!'], { type: 'text/vtt' }));
+        const captionsUrl = await resyncCaptions(story.expandedScript);
 
         onProgress({ progress: 100, message: 'Final render complete!' });
 

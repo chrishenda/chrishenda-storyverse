@@ -16,6 +16,13 @@ const ApiKeyHandler: React.FC<ApiKeyHandlerProps> = ({ children, onReady }) => {
     setChecking(true);
     setError(null);
     try {
+      const apiBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FFMPEG_API_BASE) as string | undefined;
+      if (apiBase) {
+        // Server-side AI configured; no client key required
+        setApiKeyReady(true);
+        onReady();
+        return;
+      }
       // Fallback for local development: if an environment API key is present, treat as ready
       const envApiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY) || process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (envApiKey) {
@@ -78,14 +85,14 @@ const ApiKeyHandler: React.FC<ApiKeyHandlerProps> = ({ children, onReady }) => {
 
   return (
     <div className="p-8 text-center bg-gray-800 border border-gray-700 rounded-lg">
-      <h3 className="text-xl font-bold text-white">Video Generation Requires an API Key</h3>
+      <h3 className="text-xl font-bold text-white">AI Not Configured</h3>
       <p className="mt-2 text-gray-400">
-        To generate 3D videos with Google's Veo model, please select an API key associated with a project that has billing enabled.
+        Server-side AI is not configured. For development without a server, you may select a client API key.
       </p>
       <div className="mt-6">
         <Button onClick={handleSelectKey} size="lg">
           <MagicWandIcon className="w-5 h-5 mr-2" />
-          Select API Key
+          Select Client API Key (Dev Only)
         </Button>
       </div>
       {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
