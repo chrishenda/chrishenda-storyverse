@@ -17,6 +17,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_FFMPEG_API_BASE: http://ffmpeg-api:8080
+        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY}
     container_name: storyverse-web
     ports:
       - "3000:80"

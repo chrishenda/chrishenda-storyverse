@@ -53,6 +53,29 @@ Notes
 - If you prefer object storage, modify `server/server.js` to upload final outputs to S3/R2 and return the CDN URL.
 - Frontend build arg `VITE_FFMPEG_API_BASE` is set in compose to the internal service. For external deployments, change it to your public API URL and rebuild `web`.
 
+Setting your Gemini Key for Docker builds
+- Create a `.env` file in the project root with:
+```
+VITE_GEMINI_API_KEY=your-secret-key
+```
+- Then rebuild the web service so the key is embedded into the frontend bundle:
+```
+docker compose build web
+docker compose up -d web
+```
+- Compose automatically loads variables from `.env` for build args. You can also pass the key inline:
+```
+VITE_GEMINI_API_KEY=your-secret-key docker compose build web
+```
+
+Updating configuration
+- Change `VITE_GEMINI_API_KEY` in `.env` and rebuild `web` as above.
+- Change API base domain by rebuilding with:
+```
+docker compose build --build-arg VITE_FFMPEG_API_BASE=https://api.example.com web
+docker compose up -d web
+```
+
 Troubleshooting
 - If the web app can’t reach the API, confirm the env is embedded: rebuild with the correct `VITE_FFMPEG_API_BASE`.
 - Large inputs: adjust Multer limits in `server/server.js`.
