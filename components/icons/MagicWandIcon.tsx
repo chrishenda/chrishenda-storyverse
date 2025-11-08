@@ -1,0 +1,8 @@
+
+import React from 'react';
+
+export const MagicWandIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9.375 5.375a.75.75 0 0 0-1.125 0l-1.875 1.875a.75.75 0 0 0 0 1.125l1.125 1.125a.75.75 0 0 0 1.125 0l1.875-1.875a.75.75 0 0 0 0-1.125l-1.125-1.125Z" />
+  </svg>
+);

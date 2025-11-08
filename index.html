@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chrishenda StoryVerse</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background-start: #1a237e;
+        --background-end: #004d40;
+        --background-mid1: #4a148c;
+        --background-mid2: #311b92;
+        --text-color: #f9fafb; /* gray-50 */
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+
+        /* CC Styling Variables */
+        --cc-font-family: 'Arial', sans-serif;
+        --cc-font-size: 20px;
+        --cc-color: #ffffff;
+        --cc-bg-color: rgba(0, 0, 0, 0.7);
+      }
+      body {
+        margin: 0;
+        color: var(--text-color);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background: linear-gradient(300deg, var(--background-start), var(--background-mid1), var(--background-mid2), var(--background-end));
+        background-size: 400% 400%;
+        animation: gradientAnimation 25s ease infinite;
+      }
+
+      @keyframes gradientAnimation {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      
+      @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+      }
+
+      #root {
+        min-height: 100vh;
+        background-color: rgba(17, 24, 39, 0.6); /* bg-gray-900 with opacity */
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.5s ease-out forwards;
+      }
+      
+      /* Custom Scrollbar for a more polished look */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(31, 41, 55, 0.5); /* gray-800 with opacity */
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #4b5563; /* gray-600 */
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; /* gray-500 */
+      }
+      
+      /* Custom Subtitle/CC Styling */
+      video::cue {
+        font-family: var(--cc-font-family);
+        font-size: var(--cc-font-size);
+        color: var(--cc-color);
+        background-color: var(--cc-bg-color);
+        text-shadow: 1px 1px 2px black;
+      }
+    </style>
+    <!-- Removed import map to avoid duplicate React copies causing invalid hook calls -->
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
